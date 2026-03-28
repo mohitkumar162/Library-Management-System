@@ -29,6 +29,10 @@ public class LibraryApp extends JFrame {
     private final Library library;
     private User currentUser;
 
+    // Shared book table models so all tabs stay in sync
+    private DefaultTableModel addBookModel;
+    private DefaultTableModel allBooksModel;
+
     // ──────────────────────────────────────────────────────────────────────
     public LibraryApp() {
         library = new Library();
@@ -294,12 +298,20 @@ public class LibraryApp extends JFrame {
         g.gridy = r; g.gridx = 1; g.insets = new Insets(14, 8, 6, 8);
         form.add(addBtn, g);
 
-        // Table below the form
-        DefaultTableModel model = makeBookModel();
-        JTable table = styledTable(model);
+        // Table below the form — use shared model so All Books tab stays in sync
+        addBookModel = makeBookModel();
+        JTable table = styledTable(addBookModel);
         JScrollPane scroll = scroll(table, "Current Book Catalogue");
 
-        populateBooks(model);
+        populateBooks(addBookModel);
+
+        // Refresh button for Add Book tab
+        JButton refreshAddBtn = smallButton("🔄 Refresh", SUBTEXT);
+        g.gridy = r; g.gridx = 1; g.insets = new Insets(4, 8, 6, 8);
+        // We'll add it after addBtn row, so bump r
+        g.gridy = r + 1; g.gridx = 1;
+        form.add(refreshAddBtn, g);
+        refreshAddBtn.addActionListener(e2 -> refreshAllBookTables());
 
         addBtn.addActionListener(e -> {
             String nm = nameF.getText().trim();
@@ -312,7 +324,7 @@ public class LibraryApp extends JFrame {
             }
             library.addBook(nm, au, ge.isEmpty() ? "—" : ge, copies);
             nameF.setText(""); authorF.setText(""); genreF.setText(""); copySp.setValue(1);
-            populateBooks(model);
+            refreshAllBookTables();
             showMsg("✅ Book added successfully!");
         });
 
@@ -327,42 +339,42 @@ public class LibraryApp extends JFrame {
         root.setBackground(BG);
         root.setBorder(new EmptyBorder(15, 20, 15, 20));
 
-        DefaultTableModel model = makeBookModel();
-        JTable table = styledTable(model);
-        populateBooks(model);
+        allBooksModel = makeBookModel();
+        JTable table = styledTable(allBooksModel);
+        populateBooks(allBooksModel);
 
         JPanel btns = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 5));
         btns.setBackground(BG);
 
         JButton editBtn   = accentButton("✏️  Edit Selected",   ACCENT);
         JButton deleteBtn = accentButton("🗑  Delete Selected", DANGER);
-        JButton refreshBtn= smallButton("Refresh", SUBTEXT);
+        JButton refreshBtn= smallButton("🔄 Refresh", SUBTEXT);
         btns.add(editBtn); btns.add(deleteBtn); btns.add(refreshBtn);
 
         editBtn.addActionListener(e -> {
             int row = table.getSelectedRow();
             if (row < 0) { JOptionPane.showMessageDialog(this, "Select a book first."); return; }
-            int id = (int) model.getValueAt(row, 0);
+            int id = (int) allBooksModel.getValueAt(row, 0);
             Book b = library.getBook(id);
             if (b == null) return;
-            showEditBookDialog(b, () -> populateBooks(model));
+            showEditBookDialog(b, () -> refreshAllBookTables());
         });
 
         deleteBtn.addActionListener(e -> {
             int row = table.getSelectedRow();
             if (row < 0) { JOptionPane.showMessageDialog(this, "Select a book first."); return; }
-            int id = (int) model.getValueAt(row, 0);
+            int id = (int) allBooksModel.getValueAt(row, 0);
             int confirm = JOptionPane.showConfirmDialog(this,
                     "Delete book ID " + id + "? This cannot be undone.", "Confirm Delete",
                     JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
             if (confirm == JOptionPane.YES_OPTION) {
                 library.deleteBook(id);
-                populateBooks(model);
+                refreshAllBookTables();   // ← refresh BOTH tables instantly
                 showMsg("🗑 Book deleted.");
             }
         });
 
-        refreshBtn.addActionListener(e -> populateBooks(model));
+        refreshBtn.addActionListener(e -> refreshAllBookTables());
 
         root.add(btns,          BorderLayout.NORTH);
         root.add(scroll(table, "Book Catalogue"), BorderLayout.CENTER);
@@ -371,7 +383,7 @@ public class LibraryApp extends JFrame {
 
     private void showEditBookDialog(Book b, Runnable onSave) {
         JDialog d = new JDialog(this, "Edit Book — ID " + b.getId(), true);
-        d.setSize(380, 300);
+        d.setSize(380, 360);
         d.setLocationRelativeTo(this);
         d.getContentPane().setBackground(BG);
 
@@ -382,27 +394,61 @@ public class LibraryApp extends JFrame {
         g.fill = GridBagConstraints.HORIZONTAL; g.weightx = 1;
         g.insets = new Insets(5, 6, 5, 6);
 
+        // ID field — shows current ID, user can change it
+        JTextField idF     = styledField(); idF.setText(String.valueOf(b.getId()));
         JTextField nameF   = styledField(); nameF.setText(b.getBookName());
         JTextField authorF = styledField(); authorF.setText(b.getAuthorName());
         JTextField genreF  = styledField(); genreF.setText(b.getGenre());
         JSpinner   copySp  = new JSpinner(new SpinnerNumberModel(b.getTotalCopies(), 1, 999, 1));
         styleSpinner(copySp);
 
+        // Subtle hint label under ID field
+        JLabel idHint = new JLabel("Changing ID also updates all borrow history records.");
+        idHint.setFont(new Font("SansSerif", Font.ITALIC, 11));
+        idHint.setForeground(SUBTEXT);
+
         int r = 0;
+        addFormRow(p, g, r++, "Book ID", idF);
+        // Insert hint after ID row
+        g.gridy = r * 2 - 1; g.gridx = 0; g.gridwidth = 2; g.insets = new Insets(0, 8, 4, 8);
+        p.add(idHint, g);
+        g.gridwidth = 1;
+
         addFormRow(p, g, r++, "Book Title", nameF);
         addFormRow(p, g, r++, "Author",     authorF);
         addFormRow(p, g, r++, "Genre",      genreF);
         addFormRow(p, g, r++, "Copies",     copySp);
 
         JButton save = accentButton("Save Changes", ACCENT2);
-        g.gridy = r; g.gridx = 1; g.insets = new Insets(14, 6, 0, 6);
+        g.gridy = r * 2 + 1; g.gridx = 0; g.gridwidth = 2; g.insets = new Insets(14, 6, 0, 6);
         p.add(save, g);
 
         save.addActionListener(e -> {
             String nm = nameF.getText().trim();
             String au = authorF.getText().trim();
-            if (nm.isEmpty() || au.isEmpty()) { JOptionPane.showMessageDialog(d, "Title and Author required."); return; }
-            library.editBook(b.getId(), nm, au, genreF.getText().trim(), (int) copySp.getValue());
+            String idTxt = idF.getText().trim();
+            if (nm.isEmpty() || au.isEmpty()) {
+                JOptionPane.showMessageDialog(d, "Title and Author required.");
+                return;
+            }
+            // Validate and apply ID change if needed
+            int newId;
+            try {
+                newId = Integer.parseInt(idTxt);
+                if (newId <= 0) throw new NumberFormatException();
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(d, "❗ Book ID must be a positive number.");
+                return;
+            }
+            if (newId != b.getId()) {
+                boolean changed = library.changeBookId(b.getId(), newId);
+                if (!changed) {
+                    JOptionPane.showMessageDialog(d, "❌ ID " + newId + " is already taken by another book.");
+                    return;
+                }
+            }
+            // Apply the rest of the edits using the (possibly new) ID
+            library.editBook(newId, nm, au, genreF.getText().trim(), (int) copySp.getValue());
             onSave.run();
             showMsg("✅ Book updated.");
             d.dispose();
@@ -649,6 +695,12 @@ public class LibraryApp extends JFrame {
                 new String[]{"ID", "Title", "Author", "Genre", "Available", "Total"}, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
         };
+    }
+
+    /** Refreshes both the Add Book tab catalogue and the All Books tab table. */
+    private void refreshAllBookTables() {
+        if (addBookModel != null) populateBooks(addBookModel);
+        if (allBooksModel != null) populateBooks(allBooksModel);
     }
 
     private void populateBooks(DefaultTableModel m) {
