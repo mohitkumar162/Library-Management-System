@@ -31,7 +31,7 @@ public class User implements Serializable {
             for (byte b : bytes) sb.append(String.format("%02x", b));
             return sb.toString();
         } catch (Exception e) {
-            return plain; // fallback (should never happen)
+            return plain;
         }
     }
 }
