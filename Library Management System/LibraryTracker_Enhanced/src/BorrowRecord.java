@@ -8,7 +8,7 @@ public class BorrowRecord implements Serializable {
 
     private final int recordId;
     private final String studentUsername;
-    private final int bookId;
+    private int bookId;
     private final String bookName;
     private final LocalDate borrowDate;
     private LocalDate dueDate;
@@ -29,6 +29,7 @@ public class BorrowRecord implements Serializable {
     public int getRecordId()          { return recordId; }
     public String getStudentUsername(){ return studentUsername; }
     public int getBookId()            { return bookId; }
+    public void setBookId(int bookId)  { this.bookId = bookId; }
     public String getBookName()       { return bookName; }
     public LocalDate getBorrowDate()  { return borrowDate; }
     public LocalDate getDueDate()     { return dueDate; }
