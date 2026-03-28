@@ -56,8 +56,11 @@ public class Library {
     // ══════════════════════════════════════════════════════════════════════
 
     public boolean addBook(String name, String author, String genre, int copies) {
+        // bookIdCounter is always the next free slot (maintained by load + changeBookId + delete)
         books.put(bookIdCounter, new Book(bookIdCounter, name, author, genre, copies));
         bookIdCounter++;
+        // Advance past any already-occupied IDs (shouldn't happen normally, but be safe)
+        while (books.containsKey(bookIdCounter)) bookIdCounter++;
         saveBooks();
         return true;
     }
@@ -77,6 +80,34 @@ public class Library {
         b.setGenre(genre);
         b.setTotalCopies(copies);
         saveBooks();
+        return true;
+    }
+
+    /**
+     * Change a book's ID. Updates the books map key, the Book object itself,
+     * and all BorrowRecord references so nothing is left pointing to the old ID.
+     * Returns false if oldId doesn't exist or newId is already taken.
+     */
+    public boolean changeBookId(int oldId, int newId) {
+        if (!books.containsKey(oldId)) return false;
+        if (oldId == newId) return true;
+        if (books.containsKey(newId)) return false; // new ID already in use
+
+        Book b = books.remove(oldId);
+        b.setId(newId);
+        books.put(newId, b);
+
+        // Update every borrow-history record that referenced the old ID
+        for (BorrowRecord r : history) {
+            if (r.getBookId() == oldId) r.setBookId(newId);
+        }
+
+        // Recalculate the next free counter
+        bookIdCounter = 1;
+        while (books.containsKey(bookIdCounter)) bookIdCounter++;
+
+        saveBooks();
+        saveHistory();
         return true;
     }
 
@@ -171,12 +202,14 @@ public class Library {
     @SuppressWarnings("unchecked")
     private void loadBooks() {
         try (ObjectInputStream in = new ObjectInputStream(new FileInputStream(BOOKS_FILE))) {
-            books         = (HashMap<Integer, Book>) in.readObject();
-            bookIdCounter = in.readInt();
+            books = (HashMap<Integer, Book>) in.readObject();
+            in.readInt(); // discard saved counter — always recalculate below
         } catch (Exception e) {
             books = new HashMap<>();
-            bookIdCounter = 1;
         }
+        // Always recalculate: find smallest unused ID so gaps left by deletes are filled
+        bookIdCounter = 1;
+        while (books.containsKey(bookIdCounter)) bookIdCounter++;
     }
 
     private void saveBooks() {
