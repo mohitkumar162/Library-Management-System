@@ -1,4 +1,4 @@
-# 📚 Library Msnagement System
+# 📚 Library Management System
 
 ## New Features Added
 
